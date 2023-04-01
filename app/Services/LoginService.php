@@ -11,34 +11,41 @@ use App\Services\NotificationService;
 
 class LoginService
 {
-
-    public function verifyLogin($request)
+    public function login(array $request)
     {
+        $userData = User::where('email', $request['email'])
+            ->where('password', md5($request['password']))
+            ->first();
 
-        $validLogin = User::where('email', $request['email'])->where('password', md5($request['password']))->first();
-
-        if (!$validLogin) {
+        if (!$userData) {
             $data['resp_code'] = 'ERR';
             $data['resp_desc'] = 'Invalid Login Details';
+
             return $data;
         }
+        // $data->param;
+        // $data['param'];
 
-        $userData = $validLogin->toArray();
+        // $userData = $validLogin->toArray();
 
-        $allowedStatus = allowedAccountStatusForLogin();
-        if (!is_array($allowedStatus) || empty($allowedStatus)) {
+        if (!is_array(allowedAccountStatusForLogin()) || empty(allowedAccountStatusForLogin())) {
             $data['resp_code'] = 'ERR';
             $data['resp_desc'] = 'Validation Error';
-            return $data;
-        }
-        if (!in_array($userData['status'], $allowedStatus)) {
-            $data['resp_code'] = 'ERR';
-            $data['resp_desc'] = 'Unable to login into your account, current status is ' . ucfirst(strtolower($userData['status']));
+
             return $data;
         }
 
-        if ($userData['twofa_status'] == 1) {
-            $data = $this->sendOTP($userData, ["event" => "Login", "event_code" => "LGNOTP"]);
+        if (!in_array($userData->status, allowedAccountStatusForLogin())) {
+            $data['resp_code'] = 'ERR';
+            $data['resp_desc'] = 'Unable to login into your account, current status is ' . ucfirst(strtolower($userData->status));
+            return $data;
+        }
+
+        if ($userData->twofa_status === 1) {
+            $data = $this->sendOTP($userData, [
+                'event' => 'Login',
+                'event_code' => 'LGNOTP',
+            ]);
         } else {
             $token = new JwtTokenService();
             $data = $token->generateAuthToken($userData, $request);
@@ -84,7 +91,7 @@ class LoginService
 
             if ($validOtp) {
                 $otpValidFrom = strtotime($validOtp->created_at);
-                $otpValidUpto = strtotime("+10 minutes", $otpValidFrom);
+                $otpValidUpto = strtotime('+10 minutes', $otpValidFrom);
                 $isValidOtp = (($otpValidUpto - time()) > 0) ? true : false;
                 if ($isValidOtp) {
 
@@ -95,47 +102,41 @@ class LoginService
                         $data = $token->generateAuthToken($userData, $request);
 
                     } else {
-                        $data['resp_code'] = "ERR";
-                        $data['resp_desc'] = "Internal Error Occoured";
+                        $data['resp_code'] = 'ERR';
+                        $data['resp_desc'] = 'Internal Error Occoured';
                     }
                 } else {
-                    $data['resp_code'] = "ERR";
-                    $data['resp_desc'] = "OTP Expired";
+                    $data['resp_code'] = 'ERR';
+                    $data['resp_desc'] = 'OTP Expired';
                 }
             } else {
-                $data['resp_code'] = "ERR";
-                $data['resp_desc'] = "Invalid OTP";
+                $data['resp_code'] = 'ERR';
+                $data['resp_desc'] = 'Invalid OTP';
             }
         } else {
-            $data['resp_code'] = "ERR";
-            $data['resp_desc'] = "Invalid Request";
+            $data['resp_code'] = 'ERR';
+            $data['resp_desc'] = 'Invalid Request';
             $data['data'] = [];
         }
 
         return $data;
     }
 
-    private function sendOTP($user_data, $request_array)
+    private function sendOTP($userData, $requestArray)
     {
-        $user_data = is_array($user_data) ? $user_data : array();
-        if (count($user_data) > 0) {
-            $request_array['userdata'] = $user_data;
-            $request_array['mobile'] = $user_data['mobile'];
-            $request_array['email'] = $user_data['email'];
-            $request_array['host'] = @$_SERVER['SERVER_NAME'];
-            $request_array['otp_ref'] = isset($request_array['otp_ref']) ? $request_array['otp_ref'] : date('Hmi') . rand(100001, 999999) . date('sY');
+        $requestArray['userdata'] = $userData;
+        $requestArray['mobile'] = $userData['mobile'];
+        $requestArray['email'] = $userData['email'];
+        $requestArray['host'] = @$_SERVER['SERVER_NAME'];
+        $requestArray['otp_ref'] = isset($requestArray['otp_ref']) ? $requestArray['otp_ref'] : date('Hmi') . rand(100001, 999999) . date('sY');
 
-            $notify = new NotificationService();
-            $notify->sendOTP($request_array);
+        $notify = new NotificationService();
+        $notify->sendOTP($requestArray);
 
-            $data['resp_code'] = "TFA";
-            $data['resp_desc'] = "OTP Sent Succcessfully";
-            $data['data'] = ["referenceId" => $request_array['otp_ref']];
+        $data['resp_code'] = 'TFA';
+        $data['resp_desc'] = 'OTP Sent Succcessfully';
+        $data['data'] = ['referenceId' => $requestArray['otp_ref']];
 
-        } else {
-            $data['resp_code'] = "ERR";
-            $data['resp_desc'] = "Internal Processing Error";
-        }
         return $data;
     }
 

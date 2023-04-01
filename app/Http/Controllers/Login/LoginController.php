@@ -16,7 +16,7 @@ class LoginController extends Controller
         $this->loginService = $loginService;
     }
 
-    public function verifyLogin(Request $request)
+    public function login(Request $request)
     {
 
         $validator = Validator::make($request->all(), [
@@ -28,30 +28,33 @@ class LoginController extends Controller
             $data['resp_code'] = 'ERR';
             $data['resp_desc'] = $validator->errors()->first();
             $data['data'] = [];
+
             return response()->json($data, 400);
         }
 
-        $data = $this->loginService->verifyLogin($request->only(['email', 'password']));
+        $data = $this->loginService->login($request->only(['email', 'password']));
         return response()->json($data);
     }
 
-    public function verifyLoginOtp(Request $request)
+    public function verifyLogin(Request $request)
     {
-
         $validator = Validator::make($request->all(), [
             'email' => 'required|string|email',
             'otp' => 'required|digits:6',
             'referenceId' => 'required|digits:18',
         ]);
+
         if ($validator->fails()) {
             $data['resp_code'] = 'ERR';
             $data['resp_desc'] = $validator->errors()->first();
             $data['data'] = [];
             return response()->json($data, 400);
         }
-        $data = $this->loginService->verifyLoginOtp($request);
+
+        $data = $this->loginService->verifyLoginOtp($request->only(['email', 'otp', 'referenceId']));
         return response()->json($data);
     }
+
     public function userProfile()
     {
         if (!auth()->user()) {

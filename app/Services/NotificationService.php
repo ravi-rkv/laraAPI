@@ -4,7 +4,6 @@ namespace App\Services;
 date_default_timezone_set('Asia/Kolkata');
 
 use App\Models\NotificationConfig;
-use App\Models\NotificationEmailSmsConfig;
 use App\Models\NotificationLog;
 use Carbon\Carbon;
 use PHPMailer\PHPMailer\PHPMailer;
@@ -15,96 +14,103 @@ class NotificationService
     private $notify;
     private $notifyLog;
     private $notifyConfig;
-    public function __construct()
-    {
-        $this->notify = new NotificationConfig();
-        $this->notifyLog = new NotificationLog();
-        $this->notifyConfig = new NotificationEmailSmsConfig();
-    }
+    // public function __construct(NotificationConfig $notify, NotificationLog $notifyLog, NotificationEmailSmsConfig $notifyConfig)
+    // {
+    //     $this->notify = $notify;
+    //     $this->notifyLog = $notifyLog;
+    //     $this->notifyConfig = $notifyConfig;
+    // }
 
     public function sendOTP($requestData)
     {
-        // dd($requestData);
         $userdata = $requestData['userdata'];
         $event = @$requestData['event'];
         $mobile = @$requestData['mobile'];
         $email = @$requestData['email'];
         $eventcode = @$requestData['eventcode'];
 
-        if ($userdata['twofa_status'] = 1) {
-            $otpConfigDetail = $this->notify->getNotifyDataByEventCode($requestData['event_code']);
+        if ($userdata['twofa_status'] === 1) {
+            $otpConfigDetail = NotificationConfig::where([
+                'event_code' => $request['event_code'],
+            ])->first();
+            $otpConfigDetail = $this->notify->getNotifyDataByEventCode($requestData['event_code']); //can be email or SMS
 
-            if ($otpConfigDetail) {
-                $newOtpValue = mt_rand(100000, 999999);
+            if (!$otpConfigDetail) {
+                return false;
+            }
 
-                foreach ($otpConfigDetail as $key => $value) {
-                    if ($value['notify_on'] == 'SMS' || $value['notify_on'] == 'EMAIL') {
-                        $sent_on = ($value['notify_on'] == "SMS") ? $mobile : $email;
+            $newOtpValue = mt_rand(100000, 999999);
 
-                        $checkPreviousOtpSentOn = $this->notifyLog->checkPreviousNotification([
-                            "user_id" => $userdata['user_id'],
-                            "sent_on" => $sent_on,
-                            'notify_assoc_id' => $value['notify_assoc_id'],
-                            'is_valid' => 1,
-                            "extra_identifier" => isset($requestData['otp_ref']) ? trim($requestData['otp_ref']) : null,
-                        ]);
+            foreach ($otpConfigDetail as $key => $value) {
 
+                if (!in_array($value['notify_on'], ['SMS', 'EMAIL'])) {
+                    return false;
+                }
+
+                $sentOn = ($value['notify_on'] == 'SMS') ? $requestData['mobile'] : $request['email'];
+
+                $checkPreviousOtpSentOn = $this->notifyLog->checkPreviousNotification([
+                    'user_id' => $userdata['user_id'],
+                    'sent_on' => $sentOn,
+                    'notify_assoc_id' => $value['notify_assoc_id'],
+                    'is_valid' => 1,
+                    'extra_identifier' => isset($requestData['otp_ref']) ? trim($requestData['otp_ref']) : null,
+                ]);
+
+                $insertNewLog = true;
+                if ($checkPreviousOtpSentOn) {
+                    $lastNotifSentOn = strtotime($checkPreviousOtpSentOn['datetime']);
+                    $resendAllowedUpto = strtotime('+ 10 minutes', $lastNotifSentOn);
+                    $resendSameContent = (($resendAllowedUpto - time()) > 0) ? true : false;
+
+                    if ($resendSameContent) {
+                        $insertNewLog = false;
+                        $otpValue = trim($checkPreviousOtpSentOn['identifier']); //otpval value changed.
+                    } else {
+                        $otpValue = $newOtpValue;
+                        $expire_validity = $this->notifyLog->checkNotificationValidity($checkPreviousOtpSentOn['id']);
                         $insertNewLog = true;
-                        if ($checkPreviousOtpSentOn) {
-                            $lastNotifSentOn = strtotime($checkPreviousOtpSentOn['datetime']);
-                            $resendAllowedUpto = strtotime("+ 10 minutes", $lastNotifSentOn);
-                            $resendSameContent = (($resendAllowedUpto - time()) > 0) ? true : false;
-
-                            if ($resendSameContent) {
-                                $insertNewLog = false;
-                                $otpValue = trim($checkPreviousOtpSentOn['identifier']); //otpval value changed.
-                            } else {
-                                $otpValue = $newOtpValue;
-                                $expire_validity = $this->notifyLog->checkNotificationValidity($checkPreviousOtpSentOn['id']);
-                                $insertNewLog = true;
-                            }
-
-                        } else {
-                            // trigger new sms and email
-                            $otpValue = $newOtpValue;
-                            $insertNewLog = true;
-                        }
-                        $value['content'] = str_replace('$USER$', $userdata['first_name'], $value['content']);
-                        $value['content'] = str_replace('$OTP$', $otpValue, $value['content']);
-                        if ($insertNewLog === true) {
-                            $log_array = array(
-                                "notify_id" => $value['notify_id'],
-                                "notify_assoc_id" => $value['notify_assoc_id'],
-                                "user_id" => $userdata['user_id'],
-                                "sent_on" => $sent_on,
-                                "identifier" => $otpValue,
-                                "content" => $value['content'],
-                                "created_at" => Carbon::now(),
-                                "extra_identifier" => isset($requestData['otp_ref']) ? trim($requestData['otp_ref']) : null,
-                                "is_valid" => 1,
-                            );
-
-                            $insertNewOtpLog = NotificationLog::insert($log_array);
-                        }
-
-                        $this->processNotification($value, $requestData);
                     }
 
+                } else {
+                    // trigger new sms and email
+                    $otpValue = $newOtpValue;
+                    $insertNewLog = true;
                 }
+                $value['content'] = str_replace('$USER$', $userdata['first_name'], $value['content']);
+                $value['content'] = str_replace('$OTP$', $otpValue, $value['content']);
+                if ($insertNewLog === true) {
+                    $log_array = array(
+                        'notify_id' => $value['notify_id'],
+                        'notify_assoc_id' => $value['notify_assoc_id'],
+                        'user_id' => $userdata['user_id'],
+                        'sent_on' => $sentOn,
+                        'identifier' => $otpValue,
+                        'content' => $value['content'],
+                        'created_at' => Carbon::now(),
+                        'extra_identifier' => isset($requestData['otp_ref']) ? trim($requestData['otp_ref']) : null,
+                        'is_valid' => 1,
+                    );
+
+                    $insertNewOtpLog = NotificationLog::insert($log_array);
+                }
+
+                $this->processNotification($value, $requestData);
 
             }
 
+        } else {
+            // send something
         }
-
     }
 
     private function processNotification($notifyData, $requestData)
     {
-        if ($notifyData['notify_on'] == "SMS" || $notifyData['notify_on'] == "EMAIL") {
+        if ($notifyData['notify_on'] == 'SMS' || $notifyData['notify_on'] == 'EMAIL') {
             $notifyConfig = $this->notifyConfig->getNotificationConfigs($notifyData['notify_on']);
             if ($notifyConfig) {
 
-                if ($notifyConfig['config_type'] == "SMS") {
+                if ($notifyConfig['config_type'] == 'SMS') {
 
                     // $requestid ='123456';
                     // $url = $notifyConfig['param1'];
@@ -114,9 +120,9 @@ class NotificationService
 
                     // $insert_logarray = array(
 
-                    //     "request" => $url,
-                    //     "request_dt" => date('Y-m-d H:i:s'),
-                    //     "request_id" => $requestid,
+                    //     'request' => $url,
+                    //     'request_dt' => date('Y-m-d H:i:s'),
+                    //     'request_id' => $requestid,
                     // );
 
                     // // $sms_logdata = $this->_ci->alert_md->log_sms_content($insert_logarray);
@@ -138,15 +144,15 @@ class NotificationService
 
                     //     if ($response) {
                     //         $update_logarray = array(
-                    //             "response" => $response,
-                    //             "response_dt" => date('Y-m-d H:i:s'),
-                    //             "smslogid" => $sms_logdata,
+                    //             'response' => $response,
+                    //             'response_dt' => date('Y-m-d H:i:s'),
+                    //             'smslogid' => $sms_logdata,
                     //         );
                     //     } else {
                     //         $update_logarray = array(
-                    //             "response" => "No Response",
-                    //             "response_dt" => date('Y-m-d H:i:s'),
-                    //             "smslogid" => $sms_logdata,
+                    //             'response' => 'No Response',
+                    //             'response_dt' => date('Y-m-d H:i:s'),
+                    //             'smslogid' => $sms_logdata,
                     //         );
                     //     }
 
