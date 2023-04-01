@@ -23,10 +23,6 @@ class LoginService
 
             return $data;
         }
-        // $data->param;
-        // $data['param'];
-
-        // $userData = $validLogin->toArray();
 
         if (!is_array(allowedAccountStatusForLogin()) || empty(allowedAccountStatusForLogin())) {
             $data['resp_code'] = 'ERR';
@@ -100,7 +96,6 @@ class LoginService
 
                         $token = new JwtTokenService();
                         $data = $token->generateAuthToken($userData, $request);
-
                     } else {
                         $data['resp_code'] = 'ERR';
                         $data['resp_desc'] = 'Internal Error Occoured';
@@ -124,20 +119,26 @@ class LoginService
 
     private function sendOTP($userData, $requestArray)
     {
-        $requestArray['userdata'] = $userData;
+        $requestArray['userData'] = $userData;
         $requestArray['mobile'] = $userData['mobile'];
         $requestArray['email'] = $userData['email'];
         $requestArray['host'] = @$_SERVER['SERVER_NAME'];
         $requestArray['otp_ref'] = isset($requestArray['otp_ref']) ? $requestArray['otp_ref'] : date('Hmi') . rand(100001, 999999) . date('sY');
 
         $notify = new NotificationService();
-        $notify->sendOTP($requestArray);
+        // $notify->sendOTP($requestArray);
+        $sendOtpResponse = $notify->sendOTP($requestArray);
 
-        $data['resp_code'] = 'TFA';
-        $data['resp_desc'] = 'OTP Sent Succcessfully';
-        $data['data'] = ['referenceId' => $requestArray['otp_ref']];
+        $data['resp_code'] = 'ERR';
+        $data['resp_desc'] = 'Something Went Wrong';
+        $data['data'] = [];
+
+        if ($sendOtpResponse) {
+            $data['resp_code'] = 'TFA';
+            $data['resp_desc'] = 'OTP Sent Succcessfully';
+            $data['data'] = ['referenceId' => $requestArray['otp_ref']];
+        }
 
         return $data;
     }
-
 }

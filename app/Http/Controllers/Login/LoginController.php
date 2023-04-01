@@ -61,13 +61,11 @@ class LoginController extends Controller
             $data['resp_code'] = 'ERR';
             $data['resp_desc'] = 'Login Required';
             $data['data'] = [];
-
         } else {
             $data['resp_code'] = 'RCS';
             $data['resp_desc'] = 'Request Completed Successfully';
             $data['data'] = auth()->user();
         }
         return response()->json($data);
-
     }
 }

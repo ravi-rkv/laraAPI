@@ -9,4 +9,8 @@ class NotificationAssociate extends Model
 {
     use HasFactory;
 
+    public function associateSenderConfig()
+    {
+        return $this->hasOne(NotificationEmailSmsConfig::class, 'config_type', 'notifyOn');
+    }
 }

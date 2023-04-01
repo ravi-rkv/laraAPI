@@ -18,6 +18,7 @@ class NotificationLog extends Model
             return $data->toArray();
         }
     }
+
     public function checkNotificationValidity($id)
     {
 
@@ -37,5 +38,4 @@ class NotificationLog extends Model
             $data->where(['nl.extra_identifier' => $otp]);
         }
     }
-
 }

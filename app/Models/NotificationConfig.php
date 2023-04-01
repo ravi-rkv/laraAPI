@@ -18,9 +18,13 @@ class NotificationConfig extends Model
             ->where('nc.event_code', '=', $eventCode)
             ->get();
         if ($data) {
-            return collect($data)->map(function ($x) {return (array) $x;})->toArray();
+            return collect($data)->map(function ($x) {
+                return (array) $x;
+            })->toArray();
         }
     }
+
+
 
     public function checkPreviousMessageByCode($user_id, $event_code, $otp, $identifire = null)
     {
@@ -35,4 +39,8 @@ class NotificationConfig extends Model
         return $data->first();
     }
 
+    public function notificationAssociates()
+    {
+        return $this->hasMany(NotificationAssociate::class, 'notify_id', 'id');
+    }
 }
